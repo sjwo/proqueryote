@@ -31,7 +31,7 @@ CACHE_URLS = [
   'https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/' + TAXDUMP_FILENAME
 ]
 FAA_EXTENSION = '/*protein.faa.gz'
-FNA_EXTENSION = '/*genomic.fna.gz'
+FNA_EXTENSION = '/*_cds_from_genomic.fna.gz'
 # ORDER LISTING OF RANKS USED BY NODES.DMP FROM TAXDUMP.TAR.GZ FROM NCBI
 RANK_ORDER = ['superkingdom', 'kingdom', 'superphylum', 'phylum', 'subphylum', 'superclass', 'class', 'subclass', 'infraclass', 'order', 'superfamily', 'family', 'subfamily', 'genus', 'subgenus', 'species group', 'species subgroup', 'species', 'subspecies']
 
