@@ -16,7 +16,16 @@ from pathlib import Path
 from collections import namedtuple
 Values = List[str]
 
+'''
+=========================================================
+GLOBAL CONFIGURATION, INITIALIZATION, AND SUPPORT METHODS
+=========================================================
+'''
+
 # CACHE FILE LOCATIONS
+# Cache is stored in hidden folder in user's home folder.
+# Cache contains database files used to process user queries.
+# (Actual sequence files are not cached.)
 HOME = str(Path.home())
 CACHE = HOME + '/.proqueryote/'
 PROKARYOTES = CACHE + 'prokaryotes.txt'
@@ -30,19 +39,27 @@ CACHE_URLS = [
   'ftp://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt',
   'https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/' + TAXDUMP_FILENAME
 ]
+
+# SPECIFY SEQUENCE FILE TYPES TO DOWNLOAD
 FAA_EXTENSION = '/*protein.faa.gz'
 FNA_EXTENSION = '/*_cds_from_genomic.fna.gz'
-# ORDER LISTING OF RANKS USED BY NODES.DMP FROM TAXDUMP.TAR.GZ FROM NCBI
+
+# ORDERED LISTING OF ALL RANKS USED BY NODES.DMP (FROM TAXDUMP.TAR.GZ FROM NCBI)
+# This ordered list is necessary for building the taxonomy for each initial taxID listed in prokaryotes.txt
 RANK_ORDER = ['superkingdom', 'kingdom', 'superphylum', 'phylum', 'subphylum', 'superclass', 'class', 'subclass', 'infraclass', 'order', 'superfamily', 'family', 'subfamily', 'genus', 'subgenus', 'species group', 'species subgroup', 'species', 'subspecies']
 
 # RANKS FOR WHICH TO ADD COLUMNS TO PROKARYOTES TABLE
+# These are the specific taxonomic ranks whose informamtion we wanted
+# added as new columns in the prokaryotes.txt table.
 def RANKS():
    return {'species':'','genus':'','family':'','phylum':''}
 
+# FOR COMMAND LINE HELP INFO
 epilog = """
 See query file format specification in associated README.
 """
 
+# SET UP COMMAND LINE ARGUMENTS
 parser = argparse.ArgumentParser(prog="column_search", usage="column_search <queries_file>", description="Searches prokaryotes_taxanomic.txt file in working directory for all rows matching queries in given <queries_file>.", epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
 
 parser.add_argument("queries_file", type=str)
@@ -50,10 +67,20 @@ parser.add_argument('--verbose', '-v', action='count', default=0,)
 parser.add_argument('--fna', action='store_const', const=True, default=False)
 args = parser.parse_args()
 
+# PRINT A MESSAGE TO STANDARD OUTPUT PER VERBOSITY LEVEL
+# Only prints messages with level equal to or less than
+# verbosity level specified by user on command line.
 def log(msg, level=0):
    if (args.verbose >= level): print(msg)
 
+'''
+==============
+CACHE HANDLING
+==============
+'''
+
 # TEST CACHE PRESENCE
+# Returns False if any of the cache files, or the cache directory, is missing).
 def testCachePresence():
   log('testing cache presence', 2)
   if (os.path.isdir(CACHE)):
@@ -70,6 +97,8 @@ def testCachePresence():
     log('testCachePresence: cache directory missing', 3)
     return False
 
+# UPDATE CACHE
+# Removes current cache, if present, and downloads entirely new cache.
 def updateCache():
   log('Updating local cache.')
   # remove old cache, create new
@@ -94,15 +123,21 @@ def updateCache():
 
 
 '''
-==========
-TAXONOMIFY
-==========
+================================================================
+BUILD TAXONOMIC INFORMATION AND ADD TO NEW PROKARYOTES.TXT TABLE
+================================================================
 '''
+
+# PARENT AND RANK
+# A convenience type: for a given tax ID, store its rank, and the taxID of its parent.
 ParentAndRank = namedtuple('ParentAndRank', 'parent rank')
 
+# TODO: looks like this method can be deprecated
 def getLineCount():
    return sum(1 for record in open(args.proks_file, 'r'))
 
+# TAXONOMIFIER
+# Class to organize methods and data for adding new taxonomic rank columns to prokaryotes.txt
 class Taxonomifier(object):
   def __init__(self):
     log(f'Preparing to augment table with additional taxonomic rank columns', 1)
@@ -113,6 +148,9 @@ class Taxonomifier(object):
     self.names = self.getNamesMap()
     log(f'Read in {len(self.proks)} lines from {PROKARYOTES}', 3)
 
+  # GET NAMES MAP
+  # Load the names.dmp database to memory, for fast querying,
+  # as a dictionary of taxID:name key:value pairs.
   @staticmethod
   def getNamesMap():
     log(f'Loading {NAMES_FILE}', 3)
@@ -128,6 +166,10 @@ class Taxonomifier(object):
               names.setdefault(int(taxid), name)
     return names
 
+  # GET NODES MAP
+  # Load the names.dmp database to memory, for fast querying,
+  # as a dictionary of taxID:ParentAndRank key:value pairs.
+  # (ParentAndRank is the tuple type defind above.)
   @staticmethod
   def getNodesMap():
     log(f'Loading {NODES_FILE}', 3)
@@ -150,19 +192,28 @@ class Taxonomifier(object):
     return self.names[int(taxid)]
 
   def getParent(self, taxid):
+    """
+    Retrieves taxid of parent of given taxid.
+    """
     return self.nodes[int(taxid)].parent
 
   def getRank(self, taxid):
+    """
+    Retrieves rank of given taxid.
+    """
     return self.nodes[int(taxid)].rank
 
   @staticmethod
   def getTaxID(proks_record):
-    """Parse TaxID field from string of row of prokaryotes.txt
+    """
+    Parse TaxID field from raw string of given row from prokaryotes.txt
     """
     return proks_record.split('\t')[1]
 
   def getOneTaxonomy(self, taxid):
-    """Searches nodes.dmp for desired ranks, pulling corresponding names from names.dmp.
+    """
+    Searches nodes.dmp for desired ranks, pulling corresponding names from names.dmp.
+    This method builds the string that can be appended to a given row from prokaryotes.txt.
 
     :return: A TSV string: "<species>\t<genus>\t<family>\t<phylum>"
     """
@@ -193,6 +244,9 @@ class Taxonomifier(object):
     return(ranks)
 
   def produceTaxonomic(self):
+    """
+    Create a new prokaryotes_taxonomic.txt table file, with additional taxonomic rank columns.
+    """
     log('Building new table', 1)
     # costruct new header row
     old_header = self.proks[0].rstrip()
@@ -231,9 +285,9 @@ class Taxonomifier(object):
 
 
 '''
-=====
-QUERY
-=====
+=======================================================================================================
+PARSE AND PROCESS QUERIES, NOTIFY USER OF NUMBER OF RESULTS, AND PROMPT TO DOWNLOAD SELECTED SEQUENCES.
+=======================================================================================================
 '''
 
 class Criterion(object):
@@ -260,6 +314,9 @@ class Query(object):
     return 'Query:\n' + str(self.criteria)
 
 def parseQueries(queries_file):
+  '''
+  Parse a query set file, in preparation for processing/executing the queries contained therein.
+  '''
   log(f'Parsing query file: {queries_file}', 1)
   queries = list()
   with open(queries_file, 'r') as queries_f:
@@ -285,9 +342,13 @@ def parseQueries(queries_file):
 
 class Data(object):
   '''
-  API for searching and returning data from a TSV-formatted file with a header row (such as prokaryotes.txt from NCBI, optionally with added taxonomic rank columns).
+  Class organizing the data table to be queried, the parsed
+  queries, and methods for processing queries against the data table.
   '''
   def __init__(self, data_file, queries_file):
+    '''
+    Initialize by parsing the data table and query set files, and loading them to memory.
+    '''
     super().__init__()
     log('Preparing to process query using local cache.')
     self.data_file = data_file
@@ -330,10 +391,14 @@ class Data(object):
     )
     self.queries = parseQueries(queries_file)
   
+  # TODO: probably can refactor this into a local call to self.table.columns, and remove the convenience method.
   def columns(self):
     return self.table.columns
 
   def criterionTruthOf(self, criterion):
+    '''
+    Build truth table for which rows of the data table match the given Criterion.
+    '''
     criterion_truth = None
     if (len(criterion.values) > 0):
       try:
@@ -354,6 +419,9 @@ class Data(object):
     return criterion_truth
 
   def queryTruthOf(self, query: Query):
+    '''
+    Build truth table for which rows of the data table match the given Query.
+    '''
     query_truth = None
     if (len(query.criteria) > 0):
       log('Found first criterion', 3)
@@ -368,6 +436,9 @@ class Data(object):
 
 
   def select_by_queries(self):
+    '''
+    Select and return rows matching given query set.
+    '''
     log('Applying parsed queries to data', 3)
     total_truth = None
     if (len(self.queries) > 0):
@@ -384,6 +455,14 @@ class Data(object):
         
 
 def main():
+  '''
+  Run interactive command-line tool.
+  '''
+
+  log("Welcome to Proqueryote!")
+
+  # Detect whether user has requested FNA or default FAA files,
+  # and configure corresponding output strings.
   if (args.fna):
     log(f'Configured to download FNA genomes', 3)
   else:
@@ -395,20 +474,32 @@ def main():
     else:
       return FAA_EXTENSION
 
-  if not testCachePresence():
-    updateCache()
-  
-  data = Data(AUGMENTED, args.queries_file)
-  selected = data.select_by_queries()
-  log(f'Selected these records:\n{selected}', 3)
-  count = len(selected)
-
   def dataType():
     if (args.fna):
       return 'genomes'
     else:
       return 'proteomes'
 
+  def directoryStub():
+    if (args.fna):
+      return 'fna'
+    else:
+      return 'faa'
+
+  # Download and install cache, if not already present.
+  if not testCachePresence():
+    updateCache()
+
+  # Load new, expanded prokaryotes_taxonomic.txt data file,
+  # with new added columns, to memory, for fast searching.
+  data = Data(AUGMENTED, args.queries_file)
+  
+  # Search data table using user's query set
+  selected = data.select_by_queries()
+  log(f'Selected these records:\n{selected}', 3)
+  count = len(selected)
+
+  # Inform user of number of hits, and prompt to download corresponding sequence files.
   print(f'\nFound {count} species. Download available {dataType()}? [y/N]')
   while (True):
     choice = sys.stdin.readline().rstrip().lower()
@@ -420,29 +511,30 @@ def main():
       continue
     else:
       break
-    
+  
+  # Build list of sequence download URLs for search hits.
   urls = selected['FTP Path']
 
+  # Create new folder in working directory to which to download sequences.
+  # Generate unique folder name, including date-time stamp, type of
+  # file being downloaded, and number of hits from this search.
   stamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M.%S')
-  
-  def directoryStub():
-    if (args.fna):
-      return 'fna'
-    else:
-      return 'faa'
-  
   folder = f'proqueryote-{directoryStub()}-{count}-{stamp}'
   os.system(f'mkdir {folder}')
+
+  # Download sequences, of chosen type, corresponding to search hits.
   os.chdir(folder)
   for url in urls:
     sys.stdout.write('.')
     sys.stdout.flush()
     prot_url = url + fileExtension()
     os.system(f'wget --quiet {prot_url}')
+  # Extract sequence files from compressed archives.
   os.system('gunzip -- *')
   os.chdir('..')
   print()
 
+# TODO: can probably be deprecated; no longer needed.
 def test_queries_parser():
   # print(parseQueries(args.queries_file))
   # WARNING: DOES NOT USE CACHE. INSTEAD USES AUGMENTED TABLE IN
@@ -450,5 +542,7 @@ def test_queries_parser():
   data = Data('prokaryotes_taxonomic.txt', args.queries_file)
   print(data.queries)
 
+# Detects whether this program is being run as a script.
+# (Currently the only way to use proqueryote.)
 if __name__ == "__main__":
     main()
