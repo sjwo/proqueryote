@@ -132,10 +132,6 @@ BUILD TAXONOMIC INFORMATION AND ADD TO NEW PROKARYOTES.TXT TABLE
 # A convenience type: for a given tax ID, store its rank, and the taxID of its parent.
 ParentAndRank = namedtuple('ParentAndRank', 'parent rank')
 
-# TODO: looks like this method can be deprecated
-def getLineCount():
-   return sum(1 for record in open(args.proks_file, 'r'))
-
 # TAXONOMIFIER
 # Class to organize methods and data for adding new taxonomic rank columns to prokaryotes.txt
 class Taxonomifier(object):
@@ -533,14 +529,6 @@ def main():
   os.system('gunzip -- *')
   os.chdir('..')
   print()
-
-# TODO: can probably be deprecated; no longer needed.
-def test_queries_parser():
-  # print(parseQueries(args.queries_file))
-  # WARNING: DOES NOT USE CACHE. INSTEAD USES AUGMENTED TABLE IN
-  #           WORKING DIRECTORY.
-  data = Data('prokaryotes_taxonomic.txt', args.queries_file)
-  print(data.queries)
 
 # Detects whether this program is being run as a script.
 # (Currently the only way to use proqueryote.)
